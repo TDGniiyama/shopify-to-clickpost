@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shopify → クリックポスト 変換ツール</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif;
+    background: #f5f4f0;
+    color: #1a1a1a;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+  }
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 2.5rem;
+    width: 100%;
+    max-width: 640px;
+    box-shadow: 0 2px 24px rgba(0,0,0,0.07);
+  }
+  h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.02em; margin-bottom: 0.25rem; }
+  .subtitle { font-size: 12px; color: #888; margin-bottom: 2rem; }
+  .drop-zone {
+    border: 1.5px dashed #ccc;
+    border-radius: 12px;
+    padding: 2.5rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    margin-bottom: 1.25rem;
+  }
+  .drop-zone:hover { background: #f9f8f5; border-color: #aaa; }
+  .drop-zone.drag-over { background: #f0efe9; border-color: #888; }
+  .drop-zone .icon { font-size: 28px; margin-bottom: 8px; }
+  .drop-zone p { font-size: 14px; color: #555; }
+  .drop-zone .file-name { font-size: 12px; color: #999; margin-top: 6px; }
+  .row { display: flex; align-items: center; gap: 12px; margin-bottom: 1rem; flex-wrap: wrap; }
+  label.small { font-size: 13px; color: #555; white-space: nowrap; }
+  select, input[type="text"] {
+    font-size: 13px; padding: 6px 10px;
+    border: 1px solid #ddd; border-radius: 8px;
+    background: #fff; color: #1a1a1a; outline: none;
+  }
+  select:focus, input[type="text"]:focus { border-color: #888; }
+  input[type="text"] { width: 220px; }
+  .hint { font-size: 11px; color: #aaa; }
+  .warning {
+    display: none; background: #fff8e1;
+    border: 1px solid #ffe082; border-radius: 8px;
+    padding: 10px 14px; font-size: 13px; color: #7a5f00; margin-bottom: 1rem;
+  }
+  .preview-wrap { display: none; margin-bottom: 1.5rem; }
+  .preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .preview-header span { font-size: 13px; font-weight: 500; }
+  .preview-header .count { font-size: 12px; color: #888; font-weight: 400; }
+  .table-scroll { overflow-x: auto; border: 1px solid #eee; border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead { background: #f5f4f0; }
+  th { padding: 7px 10px; text-align: left; font-weight: 500; color: #555; white-space: nowrap; border-bottom: 1px solid #eee; }
+  td { padding: 6px 10px; white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; border-bottom: 1px solid #f0eff0; }
+  tr:last-child td { border-bottom: none; }
+  .btn {
+    display: none; width: 100%; padding: 12px; font-size: 14px; font-weight: 500;
+    border: none; border-radius: 10px; background: #1a1a1a; color: #fff;
+    cursor: pointer; transition: background 0.15s, transform 0.1s; letter-spacing: 0.02em;
+  }
+  .btn:hover { background: #333; }
+  .btn:active { transform: scale(0.98); }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Shopify → クリックポスト</h1>
+  <p class="subtitle">注文CSVをクリックポスト用（Shift-JIS）に変換します</p>
+
+  <label class="drop-zone" id="drop-zone">
+    <div class="icon">📂</div>
+    <p>クリックしてCSVを選択、またはドラッグ＆ドロップ</p>
+    <p class="file-name" id="file-name"></p>
+    <input type="file" id="csv-input" accept=".csv" style="display:none;">
+  </label>
+
+  <div class="row">
+    <label class="small" for="encoding-select">ShopifyのCSV文字コード:</label>
+    <select id="encoding-select">
+      <option value="UTF-8" selected>UTF-8（Shopify直接エクスポート）</option>
+      <option value="Shift_JIS">Shift-JIS（スプレッドシートで保存した場合）</option>
+    </select>
+  </div>
+
+  <div class="row">
+    <label class="small" for="content-name">内容品:</label>
+    <input type="text" id="content-name" value="ジェルネイルチップ">
+    <span class="hint">全件に適用</span>
+  </div>
+
+  <div class="warning" id="warning"></div>
+
+  <div class="preview-wrap" id="preview-wrap">
+    <div class="preview-header">
+      <span>プレビュー</span>
+      <span class="count" id="row-count"></span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead id="preview-head"></thead>
+        <tbody id="preview-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <button class="btn" id="download-btn">⬇ クリックポスト用CSVをダウンロード（Shift-JIS）</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/encoding-japanese/2.1.0/encoding.min.js"></script>
+<script>
+const HEADERS = ['お届け先郵便番号','お届け先氏名','お届け先敬称','お届け先住所1行目','お届け先住所2行目','お届け先住所3行目','お届け先住所4行目','内容品'];
+
+const SHOPIFY_MAP = {
+  zip:      ['Shipping Zip'],
+  name:     ['Shipping Name'],
+  addr1:    ['Shipping Address1'],
+  addr2:    ['Shipping Address2'],
+  province: ['Shipping Province Name', 'Shipping Province'],
+  city:     ['Shipping City'],
+};
+
+let parsedRows = [], headers = [];
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  return lines.map(line => {
+    const res = []; let inQ = false, cur = '';
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQ = !inQ; continue; }
+      if (c === ',' && !inQ) { res.push(cur); cur = ''; continue; }
+      cur += c;
+    }
+    res.push(cur);
+    return res;
+  });
+}
+
+function findCol(hdrs, candidates) {
+  for (const c of candidates) {
+    const i = hdrs.findIndex(h => h.trim() === c);
+    if (i !== -1) return i;
+  }
+  return -1;
+}
+
+function formatZip(z) {
+  const s = (z||'').replace(/[^\d]/g,'');
+  return s.length === 7 ? s.slice(0,3)+'-'+s.slice(3) : z||'';
+}
+
+// NFKC正規化：クリックポストで問題になりやすい異体字を標準化
+function normalize(s) {
+  return (s||'').normalize('NFKC');
+}
+
+function buildRows(rows, hdrs, content) {
+  const idx = Object.fromEntries(Object.entries(SHOPIFY_MAP).map(([k,v]) => [k, findCol(hdrs, v)]));
+  const missing = Object.entries(idx).filter(([k,v]) => v===-1 && k!=='addr2').map(([k])=>k);
+  if (missing.length) showWarning('カラムが見つかりません: ' + missing.join(', '));
+  return rows
+    .filter(row => {
+      const n = idx.name !== -1 ? row[idx.name] : '';
+      const z = idx.zip  !== -1 ? row[idx.zip]  : '';
+      return n && n.trim() && z && z.trim();
+    })
+    .map(row => {
+      const get = k => (idx[k] !== -1 && row[idx[k]]) ? normalize(row[idx[k]]) : '';
+      return [
+        formatZip(get('zip')),
+        get('name'),
+        '様',
+        get('province') + get('city'),
+        get('addr1'),
+        get('addr2'),
+        '',
+        normalize(content)
+      ];
+    });
+}
+
+function showWarning(msg) {
+  const w = document.getElementById('warning');
+  w.textContent = msg; w.style.display = 'block';
+}
+function hideWarning() {
+  document.getElementById('warning').style.display = 'none';
+}
+
+function renderPreview(cpRows) {
+  const thead = document.getElementById('preview-head');
+  const tbody = document.getElementById('preview-body');
+  thead.innerHTML = '<tr>' + HEADERS.map(h => `<th>${h}</th>`).join('') + '</tr>';
+  tbody.innerHTML = cpRows.slice(0,5).map(r =>
+    '<tr>' + r.map(v => `<td>${v||'—'}</td>`).join('') + '</tr>'
+  ).join('');
+  document.getElementById('row-count').textContent = cpRows.length + '件（上位5件表示）';
+  document.getElementById('preview-wrap').style.display = 'block';
+}
+
+function processFile(file) {
+  const enc = document.getElementById('encoding-select').value;
+  const reader = new FileReader();
+  reader.onload = e => {
+    hideWarning();
+    const rows = parseCSV(e.target.result);
+    if (rows.length < 2) { showWarning('データが見つかりません。'); return; }
+    headers = rows[0];
+    parsedRows = rows.slice(1);
+    const content = document.getElementById('content-name').value || 'ネイルチップ';
+    const cpRows = buildRows(parsedRows, headers, content);
+    renderPreview(cpRows);
+    document.getElementById('download-btn').style.display = 'block';
+  };
+  reader.readAsText(file, enc);
+}
+
+// Shift-JIS変換してダウンロード
+function downloadSJIS(cpRows) {
+  const content = document.getElementById('content-name').value || 'ネイルチップ';
+  const escape = v => {
+    const s = String(v||'');
+    return (s.includes(',')||s.includes('"')||s.includes('\n')) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  };
+  const csvText = [HEADERS, ...cpRows].map(r => r.map(escape).join(',')).join('\r\n');
+
+  // encoding-japaneseでShift-JIS変換
+  const unicodeArray = Encoding.stringToCode(csvText);
+  const sjisArray = Encoding.convert(unicodeArray, { to: 'SJIS', from: 'UNICODE' });
+  const uint8 = new Uint8Array(sjisArray);
+  const blob = new Blob([uint8], { type: 'text/csv;charset=shift_jis;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const date = new Date().toISOString().slice(0,10);
+  a.download = 'clickpost_' + date + '.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+document.getElementById('drop-zone').addEventListener('click', () => document.getElementById('csv-input').click());
+document.getElementById('csv-input').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  document.getElementById('file-name').textContent = f.name;
+  processFile(f);
+});
+document.getElementById('encoding-select').addEventListener('change', () => {
+  const f = document.getElementById('csv-input').files[0];
+  if (f) processFile(f);
+});
+document.getElementById('drop-zone').addEventListener('dragover', e => {
+  e.preventDefault(); e.currentTarget.classList.add('drag-over');
+});
+document.getElementById('drop-zone').addEventListener('dragleave', e => {
+  e.currentTarget.classList.remove('drag-over');
+});
+document.getElementById('drop-zone').addEventListener('drop', e => {
+  e.preventDefault(); e.currentTarget.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0]; if (!f) return;
+  document.getElementById('file-name').textContent = f.name;
+  processFile(f);
+});
+document.getElementById('download-btn').addEventListener('click', () => {
+  const content = document.getElementById('content-name').value || 'ネイルチップ';
+  const cpRows = buildRows(parsedRows, headers, content);
+  downloadSJIS(cpRows);
+});
+</script>
+</body>
+</html>
