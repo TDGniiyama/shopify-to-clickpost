@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shopify 注文一覧</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif;
+    background: #f5f4f0;
+    color: #1a1a1a;
+    min-height: 100vh;
+    padding: 2rem 1rem;
+  }
+  .header {
+    max-width: 860px;
+    margin: 0 auto 1.5rem;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin-bottom: 0.2rem; }
+  .subtitle { font-size: 12px; color: #888; }
+
+  .upload-card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 2rem;
+    max-width: 860px;
+    margin: 0 auto 1.5rem;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.06);
+  }
+  .drop-zone {
+    border: 1.5px dashed #ccc;
+    border-radius: 12px;
+    padding: 2rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .drop-zone:hover { background: #f9f8f5; border-color: #aaa; }
+  .drop-zone.drag-over { background: #f0efe9; border-color: #888; }
+  .drop-zone .icon { font-size: 24px; margin-bottom: 6px; }
+  .drop-zone p { font-size: 14px; color: #555; }
+  .file-name { font-size: 12px; color: #999; margin-top: 4px; }
+
+  .summary {
+    display: none;
+    max-width: 860px;
+    margin: 0 auto 1rem;
+    display: none;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .summary.visible { display: flex; }
+  .stat {
+    background: #fff;
+    border-radius: 12px;
+    padding: 14px 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    flex: 1;
+    min-width: 120px;
+  }
+  .stat .label { font-size: 11px; color: #888; margin-bottom: 4px; }
+  .stat .value { font-size: 22px; font-weight: 600; }
+
+  .search-bar {
+    display: none;
+    max-width: 860px;
+    margin: 0 auto 1rem;
+  }
+  .search-bar.visible { display: block; }
+  .search-bar input {
+    width: 100%;
+    padding: 10px 16px;
+    font-size: 14px;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    background: #fff;
+    outline: none;
+  }
+  .search-bar input:focus { border-color: #aaa; }
+
+  .orders {
+    max-width: 860px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .order-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    display: grid;
+    grid-template-columns: 90px 1fr 1fr;
+    gap: 0 16px;
+    align-items: start;
+  }
+  .order-num {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1a1a1a;
+  }
+  .order-date {
+    font-size: 11px;
+    color: #aaa;
+    margin-top: 2px;
+  }
+  .order-customer {
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .order-items {
+    font-size: 12px;
+    color: #555;
+    line-height: 1.7;
+  }
+  .order-item-name {
+    display: inline-block;
+  }
+  .order-item-qty {
+    display: inline-block;
+    background: #f0efe9;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 11px;
+    margin-left: 4px;
+    color: #888;
+  }
+  .empty {
+    text-align: center;
+    padding: 3rem;
+    color: #aaa;
+    font-size: 14px;
+  }
+  @media (max-width: 600px) {
+    .order-card {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto auto;
+    }
+    .order-items { grid-column: 1 / -1; margin-top: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Shopify 注文一覧</h1>
+  <p class="subtitle">注文CSVをアップロードして一覧表示</p>
+</div>
+
+<div class="upload-card">
+  <label class="drop-zone" id="drop-zone">
+    <div class="icon">📂</div>
+    <p>クリックしてCSVを選択、またはドラッグ＆ドロップ</p>
+    <p class="file-name" id="file-name"></p>
+    <input type="file" id="csv-input" accept=".csv" style="display:none;">
+  </label>
+</div>
+
+<div class="summary" id="summary">
+  <div class="stat">
+    <div class="label">注文件数</div>
+    <div class="value" id="stat-orders">—</div>
+  </div>
+  <div class="stat">
+    <div class="label">商品点数（合計）</div>
+    <div class="value" id="stat-items">—</div>
+  </div>
+  <div class="stat">
+    <div class="label">読み込み日時</div>
+    <div class="value" id="stat-date" style="font-size:13px; padding-top:4px;">—</div>
+  </div>
+</div>
+
+<div class="search-bar" id="search-bar">
+  <input type="text" id="search-input" placeholder="注文番号・お客様名・商品名で検索…">
+</div>
+
+<div class="orders" id="orders"></div>
+
+<script>
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  return lines.map(line => {
+    const res = []; let inQ = false, cur = '';
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQ = !inQ; continue; }
+      if (c === ',' && !inQ) { res.push(cur); cur = ''; continue; }
+      cur += c;
+    }
+    res.push(cur);
+    return res;
+  });
+}
+
+function findCol(hdrs, candidates) {
+  for (const c of candidates) {
+    const i = hdrs.findIndex(h => h.trim() === c);
+    if (i !== -1) return i;
+  }
+  return -1;
+}
+
+function formatDate(str) {
+  if (!str) return '';
+  const d = new Date(str);
+  if (isNaN(d)) return str;
+  return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+let allOrders = [];
+
+function renderOrders(orders) {
+  const container = document.getElementById('orders');
+  if (!orders.length) {
+    container.innerHTML = '<div class="empty">該当する注文がありません</div>';
+    return;
+  }
+  container.innerHTML = orders.map(o => `
+    <div class="order-card">
+      <div>
+        <div class="order-num">${o.name}</div>
+        <div class="order-date">${o.date}</div>
+      </div>
+      <div class="order-customer">${o.customer}</div>
+      <div class="order-items">${o.items.map(it =>
+        `<div><span class="order-item-name">${it.name}</span><span class="order-item-qty">×${it.qty}</span></div>`
+      ).join('')}</div>
+    </div>
+  `).join('');
+}
+
+function processCSV(text) {
+  const rows = parseCSV(text);
+  if (rows.length < 2) return;
+  const hdrs = rows[0];
+  const data = rows.slice(1);
+
+  const idx = {
+    name:     findCol(hdrs, ['Name']),
+    date:     findCol(hdrs, ['Created at']),
+    customer: findCol(hdrs, ['Shipping Name', 'Billing Name']),
+    itemName: findCol(hdrs, ['Lineitem name']),
+    itemQty:  findCol(hdrs, ['Lineitem quantity']),
+  };
+
+  const orderMap = new Map();
+  for (const row of data) {
+    const name = row[idx.name];
+    if (!name || !name.trim()) continue;
+    if (!orderMap.has(name)) {
+      orderMap.set(name, {
+        name,
+        date: formatDate(idx.date !== -1 ? row[idx.date] : ''),
+        customer: idx.customer !== -1 ? (row[idx.customer] || '') : '',
+        items: []
+      });
+    }
+    const order = orderMap.get(name);
+    if (!order.customer && idx.customer !== -1 && row[idx.customer]) {
+      order.customer = row[idx.customer];
+    }
+    const itemName = idx.itemName !== -1 ? row[idx.itemName] : '';
+    const itemQty  = idx.itemQty  !== -1 ? row[idx.itemQty]  : '1';
+    if (itemName && itemName.trim()) {
+      order.items.push({ name: itemName, qty: itemQty || '1' });
+    }
+  }
+
+  allOrders = [...orderMap.values()].reverse();
+  const totalItems = allOrders.reduce((s, o) => s + o.items.reduce((ss, it) => ss + Number(it.qty||1), 0), 0);
+
+  document.getElementById('stat-orders').textContent = allOrders.length;
+  document.getElementById('stat-items').textContent = totalItems;
+  document.getElementById('stat-date').textContent = new Date().toLocaleString('ja-JP').slice(0,-3);
+  document.getElementById('summary').classList.add('visible');
+  document.getElementById('search-bar').classList.add('visible');
+
+  renderOrders(allOrders);
+}
+
+document.getElementById('drop-zone').addEventListener('click', () => document.getElementById('csv-input').click());
+document.getElementById('csv-input').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  document.getElementById('file-name').textContent = f.name;
+  const reader = new FileReader();
+  reader.onload = ev => processCSV(ev.target.result);
+  reader.readAsText(f, 'UTF-8');
+});
+document.getElementById('drop-zone').addEventListener('dragover', e => {
+  e.preventDefault(); e.currentTarget.classList.add('drag-over');
+});
+document.getElementById('drop-zone').addEventListener('dragleave', e => {
+  e.currentTarget.classList.remove('drag-over');
+});
+document.getElementById('drop-zone').addEventListener('drop', e => {
+  e.preventDefault(); e.currentTarget.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0]; if (!f) return;
+  document.getElementById('file-name').textContent = f.name;
+  const reader = new FileReader();
+  reader.onload = ev => processCSV(ev.target.result);
+  reader.readAsText(f, 'UTF-8');
+});
+document.getElementById('search-input').addEventListener('input', e => {
+  const q = e.target.value.trim().toLowerCase();
+  if (!q) { renderOrders(allOrders); return; }
+  const filtered = allOrders.filter(o =>
+    o.name.toLowerCase().includes(q) ||
+    o.customer.toLowerCase().includes(q) ||
+    o.items.some(it => it.name.toLowerCase().includes(q))
+  );
+  renderOrders(filtered);
+});
+</script>
+</body>
+</html>
